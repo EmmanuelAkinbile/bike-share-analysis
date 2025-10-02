@@ -55,7 +55,8 @@ The case study follows the **Google Data Analytics Capstone** framework:
 
 ## 📖 How to View
 - Open the R notebook: [`divvy_cleaned.Rmd`](./divvy_cleaned.Rmd)  
-- Or view the HTML version: [`divvy_cleaned.html`](./divvy_cleaned.html)  
+- Or view the HTML version: [`divvy_cleaned.html`](./divvy_cleaned.nb.html)
+- See SQL analysis: [`bike_share_analysis.sql`](bike_share_analysis.sql)
 - See visuals in `/powerbi_visuals` folder (PNG exports).  
 
 ---

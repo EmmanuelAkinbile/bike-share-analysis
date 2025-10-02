@@ -1,0 +1,242 @@
+---
+title: "Divvy Case Study — Process Phase (Data Cleaning)"
+author: "Emmanuel Akinbile"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  github_document:
+    df_print: paged
+---
+
+# 1. Introduction
+
+## 1.1 Business context (ASK)
+This case study prepares and cleans Divvy ride data to enable analysis of rider behavior by segment.  
+**Business task:** create 2 cleaned, reliable datasets (Divvy **2019 Q1** and **2020 Q1**) suitable for comparing **member** vs **casual** usage patterns and informing strategies to increase conversions to membership.
+
+**Primary questions for later analysis (not answered here):**
+- How do ride duration, time-of-day, day-of-week, and station patterns differ between members and casual riders?
+- What insights could inform targeted membership offers?
+
+## 1.2 Audience & stakeholders
+- Marketing / Growth team (decision-makers for membership strategy)  
+- Operations (capacity, station placement, service hours)  
+- Data / Analytics team (owns data pipelines and BI reporting)
+
+## 1.3 Scope for this notebook
+- **Phase:** Process (data cleaning and preparation).  
+- **Files:** Divvy 2019 Q1 and 2020 Q1 CSV extracts.  
+- **Output:** 2 tidy datasets with consistent schema, validated timestamps, derived ride length, and basic date/time features.
+
+> Note: Using **Q1 only** introduces seasonality; results should not be generalized to a full year without additional data.
+
+## 1.4 Data overview (pre-clean)
+- **2019 Q1**: ~350k rows (legacy schema)  
+- **2020 Q1**: ~427k rows (new schema)  
+- Common entities: ride timestamps, start/end stations, member type.  
+- Known differences: column names and availability (e.g., `usertype` in 2019 vs `member_casual` in 2020; `rideable_type` missing in 2019).
+
+## 1.5 Assumptions & constraints
+- Timezone assumed **America/Chicago** unless specified in source metadata.  
+- Remove rides under 30 seconds and extreme ride durations (> 24 hours).  
+- Retain rows even if lat/long are missing (document missingness).  
+- Station names normalized for whitespace only (no aggressive de-duplication).
+
+## 1.6 Success criteria (for this phase)
+- 2 cleaned datasets with:
+  - Harmonized column names and types.  
+  - Valid `started_at`, `ended_at`, and **ride_length_min**.  
+  - Documented filters and row counts before/after cleaning.  
+  - Reproducible code and a clear data dictionary.
+
+## 1.7 Deliverables (from this notebook)
+- **Clean datasets:** `bikes_2019.csv` & `bikes_2020.csv`(and `.rds`).  
+- **Summary note:** pre/post row counts, % removed, missingness snapshot.  
+- **Data dictionary:** final fields and definitions for downstream analysis.
+
+---
+
+## Load Required Libraries
+Import required R packages for data wrangling, date handling, and dataset inspection.
+```{r setup, message=FALSE, warning=FALSE}
+# Load required libraries
+library(tidyverse)   # data wrangling and visualization
+library(lubridate)   # dates and times
+library(janitor)     # cleaning column names
+library(skimr)       # quick summaries
+library(readr)       # CSV import
+library(DT)          # interactive tables
+library(knitr)       # pretty tables
+```
+
+## Import Raw Datasets
+Load the 2019 na 2020 Divvy trip data into R and inspect row/column counts to confirm size and structure
+```{r import-data, message=FALSE, warning=FALSE}
+# Import Divvy datasets
+q1_2019 <- read_csv("Divvy_Trips_2019_Q1.csv")
+q1_2020 <- read_csv("Divvy_Trips_2020_Q1.csv")
+
+# Preview the first few rows of each dataset
+head(q1_2019)
+head(q1_2020)
+
+# Check the dimensions (rows and columns)
+dim(q1_2019)
+dim(q1_2020)
+```
+
+## Prepare Datasets for Combining in SQL
+### Chunk A - Rename & add fields (2019 -> 2020 Schema):
+Standardize 2019 columns to the 2020 layout; rename legacy fields, add missing variables (rideable_type, member_casual), and normalize values so both years share the same schema
+
+```{r rename-columns, message=FALSE, warning=FALSE}
+q1_2019 <- q1_2019 %>% 
+  rename(
+    ride_id = trip_id,
+    started_at = start_time,
+    ended_at = end_time,
+    start_station_name = from_station_name,
+    start_station_id = from_station_id,
+    end_station_name = to_station_name,
+    end_station_id = to_station_id,
+    usertype = usertype
+      ) %>% 
+  mutate(rideable_type = "classic_bike",
+         start_lat = "NA",
+         start_lng = "NA",
+         end_lat   = "NA",
+         end_lng   = "NA",
+         member_casual = case_when(
+           usertype == "Subscriber" ~ "member",
+           usertype == "Customer" ~ "casual",
+           TRUE ~ NA_character_
+         )
+        ) %>% 
+    select(-usertype)
+```
+### Chunk B - Align order & verify match:
+Reorder 2019 columns to the exact 2020 sequence and programmatically confirm that both datasets now have identical column names for seamless downstream joins.
+
+```{r recheck-columns, message=FALSE, warning=FALSE}
+# Make sure 2019 dataset columns match 2020 dataset order
+q1_2019 <- q1_2019 %>%
+  select(ride_id,
+         rideable_type,
+         started_at,
+         ended_at,
+         start_station_name,
+         start_station_id,
+         end_station_name,
+         end_station_id,
+         start_lat,
+         start_lng,
+         end_lat,
+         end_lng,
+         member_casual)
+
+# Check if column names now match
+all(names(q1_2019) == names(q1_2020))
+
+```
+
+## Standardizing Datatypes 
+Convert key fields (ride IDs, timestamps, etc) to consistent data types across both datasets, ensuring compatibility when the 2 years are later combined in SQL.
+
+```{r binding-datasets, message=FALSE, warning=FALSE}
+str(q1_2019)##checking the datatypes of columns in 2019 data
+str(q1_2020)##checking the datatypes of columns in 2020 data
+sapply(q1_2019, class)
+sapply(q1_2020, class)
+
+
+# Match ride_id datatype
+q1_2019$ride_id <- as.character(q1_2019$ride_id)
+
+# Match start and end time datatypes
+q1_2019$started_at <- as.POSIXct(q1_2019$started_at,
+                                             format = "%Y-%m-%d %H:%M:%S",
+                                             tz = "UTC")
+q1_2019$ended_at <- as.POSIXct(q1_2019$ended_at,
+                                           format = "%Y-%m-%d %H:%M:%S",
+                                           tz = "UTC")
+q1_2020$started_at <- as.POSIXct(q1_2020$started_at,
+                                             format = "%Y-%m-%d %H:%M:%S",
+                                             tz = "UTC")
+q1_2020$ended_at <- as.POSIXct(q1_2020$ended_at,
+                                             format = "%Y-%m-%d %H:%M:%S",
+                                             tz = "UTC")
+
+# Match latitude/longitude
+q1_2019$start_lat <- as.numeric(q1_2019$start_lat)
+q1_2019$start_lng <- as.numeric(q1_2019$start_lng)
+q1_2019$end_lat   <- as.numeric(q1_2019$end_lat)
+q1_2019$end_lng   <- as.numeric(q1_2019$end_lng)
+
+```
+
+
+## Quality Checks 
+Sanity-check the structure and missingness: print compact schemas with str() and run column-level NA counts to confirm expected types and spot any fields requiring remediation before export.
+
+```{r}
+str(q1_2019)
+str(q1_2020)
+colSums(is.na(q1_2019))
+colSums(is.na(q1_2020))
+```
+## Removing Unneeded Data
+Remove columns that won't be needed for analysis.Then recheck the columns for empty spaces and duplicate records.
+
+```{r clean-columns2019, message=FALSE, warning=FALSE}
+# Select only columns necessary for analysis
+q1_2019 <- q1_2019 %>% 
+  select(
+    ride_id, rideable_type, started_at, ended_at,
+         start_station_name, end_station_name, member_casual
+  )
+head(q1_2019)
+# Check for NA in the columns
+colSums(is.na(q1_2019))
+# Check number of rows before removing duplicates
+nrow(q1_2019)
+
+# Remove duplicates
+q1_2019 <- q1_2019 %>% distinct()
+
+# Check number of rows after
+nrow(q1_2019)
+
+```
+
+```{r clean-columns2020, message=FALSE, warning=FALSE}
+# Select only columns necessary for analysis
+q1_2020 <- q1_2020 %>% 
+  select(
+    ride_id, rideable_type, started_at, ended_at,
+         start_station_name, end_station_name, member_casual
+  )
+head(q1_2020)
+# Check for NA in the columns
+colSums(is.na(q1_2020))
+# Check number of rows before removing duplicates
+nrow(q1_2020)
+
+# Remove duplicates
+q1_2020 <- q1_2020 %>% distinct()
+
+# Check number of rows after
+nrow(q1_2020)
+
+```
+
+### Summary of Data Cleaning in RStudio  
+Export the cleaned 2019 and 2020 datasets as CSVs with write.csv(), ensuring aligned schemas for downstream SQL analysis. 
+
+```{r export-data, message=FALSE, warning=FALSE}
+write.csv(q1_2019, "bikes_2019.csv", row.names = FALSE)
+write.csv(q1_2020, "bikes_2020.csv", row.names = FALSE)
+
+
+```
+
+In this phase, we standardized column names, harmonized datatypes, validated missingness, removed duplicates, and retained only relevant fields — producing two tidy datasets ready for integration and analysis.
+

@@ -59,6 +59,7 @@ The case study follows the **Google Data Analytics Capstone** framework:
 - See SQL analysis: [`bike_share_analysis.sql`](bike_share_analysis.sql)
 - See visuals in `/powerbi_visuals` folder (PNG exports).
 - Can also access full interactive dashboard: [`Cyclistic Dashboard`](https://drive.google.com/file/d/1eLuV5Y4MSi7VCiXl32RAEVPVy1Xcr0Lx/view?usp=sharing)
+- View full case study PDF: [`Cyclistic Case Study`](https://docs.google.com/document/d/1CxIQSyvO_mTiUgl1qpxVZNpB_JqsRuxjeMu3DkHU_EU/edit?usp=sharing)
 
 ---
 

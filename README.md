@@ -19,7 +19,7 @@ The case study follows the **Google Data Analytics Capstone** framework:
 
 ## 📂 Repository Contents
 - `divvy_cleaned.Rmd` → R Markdown notebook showing data cleaning steps  
-- `divvy_cleaned.html` → Knitted HTML version (viewable without RStudio)  
+- `divvy_clean.nb.html` → Knitted HTML version (viewable without RStudio)  
 - `bikes_2019.csv` / `bikes_2020.csv` → Cleaned datasets with aligned schema  
 - `Cyclistic_Case_Study.docx` → Final case study deliverable  
 - Power BI dashboard images (member vs casual analysis)  
